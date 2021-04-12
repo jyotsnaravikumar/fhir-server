@@ -212,7 +212,7 @@ namespace Microsoft.Health.Fhir.Api {
                 return ResourceManager.GetString("GeneralTransactionFailedError", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to The input data type &apos;{0}&apos; and default template collection &apos;{1}&apos; are inconsistent..
         /// </summary>
@@ -221,7 +221,7 @@ namespace Microsoft.Health.Fhir.Api {
                 return ResourceManager.GetString("InputDataTypeAndDefaultTemplateCollectionInconsistent", resourceCulture);
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized string similar to Requested operation &apos;{0}&apos; is not supported using {1}..
         /// </summary>
@@ -570,6 +570,15 @@ namespace Microsoft.Health.Fhir.Api {
         public static string Unauthorized {
             get {
                 return ResourceManager.GetString("Unauthorized", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to $everything is not supported on resource type {0}..
+        /// </summary>
+        public static string UnsupportedEverythingOperationResourceType {
+            get {
+                return ResourceManager.GetString("UnsupportedEverythingOperationResourceType", resourceCulture);
             }
         }
         

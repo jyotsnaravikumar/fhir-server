@@ -22,7 +22,6 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
     /// </summary>
     public abstract class SearchService : ISearchService
     {
-        private readonly ISearchOptionsFactory _searchOptionsFactory;
         private readonly IFhirDataStore _fhirDataStore;
 
         /// <summary>
@@ -36,9 +35,11 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             EnsureArg.IsNotNull(searchOptionsFactory, nameof(searchOptionsFactory));
             EnsureArg.IsNotNull(fhirDataStore, nameof(fhirDataStore));
 
-            _searchOptionsFactory = searchOptionsFactory;
+            SearchOptionsFactory = searchOptionsFactory;
             _fhirDataStore = fhirDataStore;
         }
+
+        protected ISearchOptionsFactory SearchOptionsFactory { get; }
 
         /// <inheritdoc />
         public async Task<SearchResult> SearchAsync(
@@ -46,7 +47,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             IReadOnlyList<Tuple<string, string>> queryParameters,
             CancellationToken cancellationToken)
         {
-            SearchOptions searchOptions = _searchOptionsFactory.Create(resourceType, queryParameters);
+            SearchOptions searchOptions = SearchOptionsFactory.Create(resourceType, queryParameters);
 
             // Execute the actual search.
             return await SearchInternalAsync(searchOptions, cancellationToken);
@@ -60,7 +61,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             IReadOnlyList<Tuple<string, string>> queryParameters,
             CancellationToken cancellationToken)
         {
-            SearchOptions searchOptions = _searchOptionsFactory.Create(compartmentType, compartmentId, resourceType, queryParameters);
+            SearchOptions searchOptions = SearchOptionsFactory.Create(compartmentType, compartmentId, resourceType, queryParameters);
 
             // Execute the actual search.
             return await SearchInternalAsync(searchOptions, cancellationToken);
@@ -159,7 +160,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
                 queryParameters.Add(Tuple.Create(KnownQueryParameterNames.Count, count.ToString()));
             }
 
-            SearchOptions searchOptions = _searchOptionsFactory.Create(resourceType, queryParameters);
+            SearchOptions searchOptions = SearchOptionsFactory.Create(resourceType, queryParameters);
 
             SearchResult searchResult = await SearchHistoryInternalAsync(searchOptions, cancellationToken);
 
@@ -185,7 +186,7 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             bool countOnly,
             CancellationToken cancellationToken)
         {
-            SearchOptions searchOptions = _searchOptionsFactory.Create(null, queryParameters);
+            SearchOptions searchOptions = SearchOptionsFactory.Create(null, queryParameters);
 
             if (countOnly)
             {
@@ -195,6 +196,22 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             var results = await SearchForReindexInternalAsync(searchOptions, searchParameterHash, cancellationToken);
 
             return results;
+        }
+
+        public async Task<SearchResult> SearchForEverythingOperationAsync(
+            string resourceType,
+            string resourceId,
+            PartialDateTime start,
+            PartialDateTime end,
+            PartialDateTime since,
+            string type,
+            int? count,
+            string continuationToken,
+            IReadOnlyList<string> includes,
+            IReadOnlyList<Tuple<string, string>> revincludes,
+            CancellationToken cancellationToken)
+        {
+            return await SearchForEverythingOperationInternalAsync(resourceType, resourceId, start, end, since, type, count, continuationToken, includes, revincludes, cancellationToken);
         }
 
         /// <summary>
@@ -215,5 +232,65 @@ namespace Microsoft.Health.Fhir.Core.Features.Search
             SearchOptions searchOptions,
             string searchParameterHash,
             CancellationToken cancellationToken);
+
+        protected abstract Task<SearchResult> SearchForEverythingOperationInternalAsync(
+            string resourceType,
+            string resourceId,
+            PartialDateTime start,
+            PartialDateTime end,
+            PartialDateTime since,
+            string type,
+            int? count,
+            string continuationToken,
+            IReadOnlyList<string> includeParameters,
+            IReadOnlyList<Tuple<string, string>> revincludeParameters,
+            CancellationToken cancellationToken);
+
+        protected async Task<SearchResult> SearchReferencesForEverythingOperation(
+            string resourceType,
+            string resourceId,
+            PartialDateTime since,
+            string type,
+            IReadOnlyList<string> includeParameters,
+            IReadOnlyList<Tuple<string, string>> revincludeParameters,
+            CancellationToken cancellationToken)
+        {
+            // build search parameters
+            var searchParameters = new List<Tuple<string, string>>
+            {
+                Tuple.Create(SearchParameterNames.Id, resourceId),
+            };
+
+            searchParameters.AddRange(includeParameters.Select(include => Tuple.Create(SearchParameterNames.Include, $"{resourceType}:{include}")));
+            searchParameters.AddRange(revincludeParameters.Select(revinclude => Tuple.Create(SearchParameterNames.Revinclude, $"{revinclude.Item1}:{revinclude.Item2}")));
+
+            // search
+            SearchOptions searchOptions = SearchOptionsFactory.Create(resourceType, searchParameters);
+            SearchResult searchResult = await SearchInternalAsync(searchOptions, cancellationToken);
+            IEnumerable<SearchResultEntry> searchResultEntries = searchResult.Results.Select(x => new SearchResultEntry(x.Resource));
+
+            // filter results by _type
+            if (!string.IsNullOrEmpty(type))
+            {
+                IReadOnlyList<string> types = type.SplitByOrSeparator();
+                searchResultEntries = searchResultEntries.Where(s => types.Contains(s.Resource.ResourceTypeName));
+            }
+
+            // filter results by _since
+            if (since != null)
+            {
+                var sinceDateTimeOffset = since.ToDateTimeOffset(
+                    defaultMonth: 1,
+                    defaultDaySelector: (year, month) => 1,
+                    defaultHour: 0,
+                    defaultMinute: 0,
+                    defaultSecond: 0,
+                    defaultFraction: 0.0000000m,
+                    defaultUtcOffset: TimeSpan.Zero);
+                searchResultEntries = searchResultEntries.Where(s => s.Resource.LastModified.CompareTo(sinceDateTimeOffset) >= 0).ToList();
+            }
+
+            return new SearchResult(searchResultEntries, searchResult.ContinuationToken, searchResult.SortOrder, searchResult.UnsupportedSearchParameters);
+        }
     }
 }

@@ -338,6 +338,39 @@ namespace Microsoft.Health.Fhir.CosmosDb.Features.Search
             return CreateSearchResult(searchOptions, results.Select(r => new SearchResultEntry(r)), continuationToken);
         }
 
+        protected override async Task<SearchResult> SearchForEverythingOperationInternalAsync(
+            string resourceType,
+            string resourceId,
+            PartialDateTime start,
+            PartialDateTime end,
+            PartialDateTime since,
+            string type,
+            int? count,
+            string continuationToken,
+            IReadOnlyList<string> includeParameters,
+            IReadOnlyList<Tuple<string, string>> revincludeParameters,
+            CancellationToken cancellationToken)
+        {
+            // if continuation token provided, we are in second page or after, return compartment search results
+            SearchOptions searchOptions;
+            if (!string.IsNullOrEmpty(continuationToken))
+            {
+                searchOptions = SearchOptionsFactory.Create(resourceType, resourceId, start, end, since, type, count, continuationToken);
+                return await SearchInternalAsync(searchOptions, cancellationToken);
+            }
+
+            // otherwise we are in first page, return resource, _include, _revinclude and first compartment search result
+            var searchResultEntries = new List<SearchResultEntry>();
+            SearchResult searchResult = await SearchReferencesForEverythingOperation(resourceType, resourceId, since, type, includeParameters, revincludeParameters, cancellationToken);
+            searchResultEntries.AddRange(searchResult.Results);
+
+            searchOptions = SearchOptionsFactory.Create(resourceType, resourceId, start, end, since, type, 1, continuationToken);
+            searchResult = await SearchInternalAsync(searchOptions, cancellationToken);
+            searchResultEntries.AddRange(searchResult.Results);
+
+            return new SearchResult(searchResultEntries, searchResult.ContinuationToken, null, new List<Tuple<string, string>>());
+        }
+
         /// <summary>
         /// Executes a search query. Determines whether to parallelize the query across physical partitions based on previous performance of similar queries, unless <paramref name="queryRequestOptionsOverride"/> is specified.
         /// </summary>
