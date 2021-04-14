@@ -8,8 +8,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Health.Abstractions.Exceptions;
 using Microsoft.Health.Core.Features.Security.Authorization;
+using Microsoft.Health.Fhir.Core.Configs;
 using Microsoft.Health.Fhir.Core.Exceptions;
 using Microsoft.Health.Fhir.Core.Features.Operations;
 using Microsoft.Health.Fhir.Core.Features.Operations.Reindex;
@@ -18,6 +21,7 @@ using Microsoft.Health.Fhir.Core.Features.Persistence;
 using Microsoft.Health.Fhir.Core.Features.Security;
 using Microsoft.Health.Fhir.Core.Features.Security.Authorization;
 using Microsoft.Health.Fhir.Core.Messages.Reindex;
+using Microsoft.Health.Fhir.Core.UnitTests.Extensions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Xunit;
@@ -28,6 +32,8 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
     {
         private readonly IFhirOperationDataStore _fhirOperationDataStore = Substitute.For<IFhirOperationDataStore>();
         private IReadOnlyDictionary<string, string> _resourceTypeSearchParameterHashMap;
+        private readonly ReindexJobConfiguration _reindexJobConfiguration = new ReindexJobConfiguration();
+        private readonly Func<IReindexJobTask> _reindexJobTaskFactory = Substitute.For<Func<IReindexJobTask>>();
 
         public ReindexHandlerTests()
         {
@@ -108,7 +114,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
             var authorizationService = Substitute.For<IAuthorizationService<DataActions>>();
             authorizationService.CheckAccess(DataActions.Reindex, Arg.Any<CancellationToken>()).Returns(DataActions.None);
 
-            var handler = new CancelReindexRequestHandler(_fhirOperationDataStore, authorizationService);
+            var handler = CreateReindexJobWorker(authorizationService);
 
             await Assert.ThrowsAsync<UnauthorizedFhirActionException>(() => handler.Handle(request, CancellationToken.None));
         }
@@ -126,7 +132,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
             var jobWrapper = new ReindexJobWrapper(jobRecord, WeakETag.FromVersionId("id"));
             _fhirOperationDataStore.GetReindexJobByIdAsync("id", Arg.Any<CancellationToken>()).Returns(jobWrapper);
 
-            var handler = new CancelReindexRequestHandler(_fhirOperationDataStore, DisabledFhirAuthorizationService.Instance);
+            var handler = CreateReindexJobWorker(DisabledFhirAuthorizationService.Instance);
 
             await Assert.ThrowsAsync<RequestNotValidException>(() => handler.Handle(request, CancellationToken.None));
         }
@@ -134,22 +140,38 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
         [Fact]
         public async Task GivenACancelRequest_WhenJobInProgress_ThenJobUpdatedToCanceled()
         {
-            var request = new CancelReindexRequest("id");
-
             var jobRecord = new ReindexJobRecord(_resourceTypeSearchParameterHashMap, 1)
             {
                 Status = OperationStatus.Running,
             };
 
-            var jobWrapper = new ReindexJobWrapper(jobRecord, WeakETag.FromVersionId("id"));
-            _fhirOperationDataStore.GetReindexJobByIdAsync("id", Arg.Any<CancellationToken>()).Returns(jobWrapper);
-            _fhirOperationDataStore.UpdateReindexJobAsync(jobRecord, WeakETag.FromVersionId("id"), Arg.Any<CancellationToken>()).Returns(jobWrapper);
+            var request = new CancelReindexRequest(jobRecord.Id);
 
-            var handler = new CancelReindexRequestHandler(_fhirOperationDataStore, DisabledFhirAuthorizationService.Instance);
+            var jobWrapper = new ReindexJobWrapper(jobRecord, WeakETag.FromVersionId(jobRecord.Id));
+            _fhirOperationDataStore.GetReindexJobByIdAsync(jobRecord.Id, Arg.Any<CancellationToken>()).Returns(jobWrapper);
+            _fhirOperationDataStore.AcquireReindexJobsAsync(Arg.Any<ushort>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(new List<ReindexJobWrapper>() { jobWrapper });
+            _fhirOperationDataStore.UpdateReindexJobAsync(jobRecord, WeakETag.FromVersionId(jobRecord.Id), Arg.Any<CancellationToken>()).Returns(jobWrapper);
 
+            var handler = CreateReindexJobWorker(DisabledFhirAuthorizationService.Instance);
+
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+            handler.ExecuteAsync(CancellationToken.None);
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+
+            await Task.Delay(100);
             var result = await handler.Handle(request, CancellationToken.None);
 
             Assert.Equal(OperationStatus.Canceled, result.Job.JobRecord.Status);
+        }
+
+        private ReindexJobWorker CreateReindexJobWorker(IAuthorizationService<DataActions> authorizationService)
+        {
+            return new ReindexJobWorker(
+                () => _fhirOperationDataStore.CreateMockScope(),
+                Options.Create(_reindexJobConfiguration),
+                _reindexJobTaskFactory,
+                authorizationService,
+                NullLogger<ReindexJobWorker>.Instance);
         }
     }
 }

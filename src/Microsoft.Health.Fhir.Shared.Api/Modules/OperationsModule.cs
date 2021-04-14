@@ -4,12 +4,14 @@
 // -------------------------------------------------------------------------------------------------
 
 using EnsureThat;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Health.Extensions.DependencyInjection;
 using Microsoft.Health.Fhir.Api.Features.Operations;
 using Microsoft.Health.Fhir.Core.Features.Conformance;
 using Microsoft.Health.Fhir.Core.Features.Operations.Export;
 using Microsoft.Health.Fhir.Core.Features.Operations.Reindex;
+using Microsoft.Health.Fhir.Core.Messages.Reindex;
 
 namespace Microsoft.Health.Fhir.Api.Modules
 {
@@ -54,7 +56,8 @@ namespace Microsoft.Health.Fhir.Api.Modules
 
             services.Add<ReindexJobWorker>()
                 .Singleton()
-                .AsSelf();
+                .AsSelf()
+                .ReplaceService<IRequestHandler<CancelReindexRequest, CancelReindexResponse>>();
 
             services.AddSingleton<IReindexUtilities, ReindexUtilities>();
 

@@ -291,6 +291,9 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
                         {
                             tokenSource.Cancel(false);
                         }
+
+                        _logger.LogInformation("Reindex Job canceled.");
+                        throw new OperationCanceledException("ReindexJob canceled.");
                     }
                 }
 
@@ -310,6 +313,11 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
             {
                 // The reindex job was updated externally.
                 _logger.LogInformation("The job was updated by another process.");
+            }
+            catch (OperationCanceledException)
+            {
+                // do nothing just throw
+                throw;
             }
             catch (Exception ex)
             {

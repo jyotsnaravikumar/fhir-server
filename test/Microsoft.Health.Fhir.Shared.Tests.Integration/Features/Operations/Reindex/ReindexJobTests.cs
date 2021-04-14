@@ -12,7 +12,6 @@ using System.Threading.Tasks;
 using Hl7.Fhir.ElementModel;
 using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
-using MediatR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Health.Extensions.DependencyInjection;
@@ -160,6 +159,7 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Features.Operations.Reindex
                 () => _scopedOperationDataStore,
                 Options.Create(_jobConfiguration),
                 InitializeReindexJobTask,
+                DisabledFhirAuthorizationService.Instance,
                 NullLogger<ReindexJobWorker>.Instance);
 
             var cancellationTokenSource = new CancellationTokenSource();
@@ -190,6 +190,7 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Features.Operations.Reindex
                 () => _scopedOperationDataStore,
                 Options.Create(_jobConfiguration),
                 InitializeReindexJobTask,
+                DisabledFhirAuthorizationService.Instance,
                 NullLogger<ReindexJobWorker>.Instance);
 
             var cancellationTokenSource = new CancellationTokenSource();
@@ -440,6 +441,7 @@ namespace Microsoft.Health.Fhir.Tests.Integration.Features.Operations.Reindex
                 () => _scopedOperationDataStore,
                 Options.Create(_jobConfiguration),
                 InitializeReindexJobTask,
+                DisabledFhirAuthorizationService.Instance,
                 NullLogger<ReindexJobWorker>.Instance);
             return response;
         }
