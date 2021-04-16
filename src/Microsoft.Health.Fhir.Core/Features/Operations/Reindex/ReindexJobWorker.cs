@@ -15,12 +15,10 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Health.Core;
-using Microsoft.Health.Core.Features.Security.Authorization;
 using Microsoft.Health.Extensions.DependencyInjection;
 using Microsoft.Health.Fhir.Core.Configs;
 using Microsoft.Health.Fhir.Core.Exceptions;
 using Microsoft.Health.Fhir.Core.Features.Operations.Reindex.Models;
-using Microsoft.Health.Fhir.Core.Features.Security;
 using Microsoft.Health.Fhir.Core.Messages.Reindex;
 using Polly;
 using Polly.Retry;
@@ -35,7 +33,6 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
         private readonly Func<IScoped<IFhirOperationDataStore>> _fhirOperationDataStoreFactory;
         private readonly ReindexJobConfiguration _reindexJobConfiguration;
         private readonly Func<IReindexJobTask> _reindexJobTaskFactory;
-        private readonly IAuthorizationService<DataActions> _authorizationService;
         private readonly AsyncRetryPolicy _retryPolicy;
         private readonly ILogger _logger;
 
@@ -48,19 +45,16 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
             Func<IScoped<IFhirOperationDataStore>> fhirOperationDataStoreFactory,
             IOptions<ReindexJobConfiguration> reindexJobConfiguration,
             Func<IReindexJobTask> reindexJobTaskFactory,
-            IAuthorizationService<DataActions> authorizationService,
             ILogger<ReindexJobWorker> logger)
         {
             EnsureArg.IsNotNull(fhirOperationDataStoreFactory, nameof(fhirOperationDataStoreFactory));
             EnsureArg.IsNotNull(reindexJobConfiguration?.Value, nameof(reindexJobConfiguration));
             EnsureArg.IsNotNull(reindexJobTaskFactory, nameof(reindexJobTaskFactory));
-            EnsureArg.IsNotNull(authorizationService, nameof(authorizationService));
             EnsureArg.IsNotNull(logger, nameof(logger));
 
             _fhirOperationDataStoreFactory = fhirOperationDataStoreFactory;
             _reindexJobConfiguration = reindexJobConfiguration.Value;
             _reindexJobTaskFactory = reindexJobTaskFactory;
-            _authorizationService = authorizationService;
             _logger = logger;
 
             _retryPolicy = Policy.Handle<JobConflictException>()
@@ -123,11 +117,6 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
         public async Task<CancelReindexResponse> Handle(CancelReindexRequest request, CancellationToken cancellationToken)
         {
             EnsureArg.IsNotNull(request, nameof(request));
-
-            if (await _authorizationService.CheckAccess(DataActions.Reindex, cancellationToken) != DataActions.Reindex)
-            {
-                throw new UnauthorizedFhirActionException();
-            }
 
             return await _retryPolicy.ExecuteAsync(async () =>
             {

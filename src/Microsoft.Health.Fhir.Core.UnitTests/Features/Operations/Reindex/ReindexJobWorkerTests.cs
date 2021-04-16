@@ -15,7 +15,6 @@ using Microsoft.Health.Fhir.Core.Features.Operations;
 using Microsoft.Health.Fhir.Core.Features.Operations.Reindex;
 using Microsoft.Health.Fhir.Core.Features.Operations.Reindex.Models;
 using Microsoft.Health.Fhir.Core.Features.Persistence;
-using Microsoft.Health.Fhir.Core.Features.Security.Authorization;
 using NSubstitute;
 using Xunit;
 
@@ -51,7 +50,6 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
                 () => scopedOperationDataStore,
                 Options.Create(_reindexJobConfiguration),
                 _reindexJobTaskFactory,
-                DisabledFhirAuthorizationService.Instance,
                 NullLogger<ReindexJobWorker>.Instance);
 
             _cancellationToken = _cancellationTokenSource.Token;

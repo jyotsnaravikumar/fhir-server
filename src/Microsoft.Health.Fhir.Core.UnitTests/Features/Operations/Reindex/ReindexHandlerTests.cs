@@ -114,9 +114,15 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
             var authorizationService = Substitute.For<IAuthorizationService<DataActions>>();
             authorizationService.CheckAccess(DataActions.Reindex, Arg.Any<CancellationToken>()).Returns(DataActions.None);
 
-            var handler = CreateReindexJobWorker(authorizationService);
+            var handler = new CancelReindexRequestAuthHandler<CancelReindexRequest, CancelReindexResponse>(authorizationService);
 
-            await Assert.ThrowsAsync<UnauthorizedFhirActionException>(() => handler.Handle(request, CancellationToken.None));
+            MediatR.RequestHandlerDelegate<CancelReindexResponse> next = async () => await Task.FromResult(new CancelReindexResponse(HttpStatusCode.OK, jobWrapper));
+
+            await Assert.ThrowsAsync<UnauthorizedFhirActionException>(
+                () => handler.Handle(
+                    request,
+                    CancellationToken.None,
+                    next));
         }
 
         [Fact]
@@ -170,7 +176,6 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Operations.Reindex
                 () => _fhirOperationDataStore.CreateMockScope(),
                 Options.Create(_reindexJobConfiguration),
                 _reindexJobTaskFactory,
-                authorizationService,
                 NullLogger<ReindexJobWorker>.Instance);
         }
     }

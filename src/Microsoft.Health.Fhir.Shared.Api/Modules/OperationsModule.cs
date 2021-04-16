@@ -59,6 +59,8 @@ namespace Microsoft.Health.Fhir.Api.Modules
                 .AsSelf()
                 .ReplaceService<IRequestHandler<CancelReindexRequest, CancelReindexResponse>>();
 
+            services.AddTransient(typeof(IPipelineBehavior<CancelReindexRequest, CancelReindexResponse>), typeof(CancelReindexRequestAuthHandler<CancelReindexRequest, CancelReindexResponse>));
+
             services.AddSingleton<IReindexUtilities, ReindexUtilities>();
 
             services.Add<OperationsCapabilityProvider>()
