@@ -137,8 +137,10 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Reindex
 
                     await store.Value.UpdateReindexJobAsync(outcome.JobRecord, outcome.ETag, cancellationToken);
 
-                    _runningTasks.TryRemove(request.JobId, out var jobPair);
-                    jobPair.Item2.Cancel();
+                    if (_runningTasks.TryRemove(request.JobId, out var jobPair))
+                    {
+                        jobPair.Item2.Cancel();
+                    }
 
                     return new CancelReindexResponse(HttpStatusCode.Accepted, outcome);
                 }
