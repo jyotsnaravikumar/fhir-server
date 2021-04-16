@@ -3,8 +3,6 @@
 // Licensed under the MIT License (MIT). See LICENSE in the repo root for license information.
 // -------------------------------------------------------------------------------------------------
 
-using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using EnsureThat;
@@ -23,8 +21,6 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Everything
         private readonly ISearchService _searchService;
         private readonly IBundleFactory _bundleFactory;
         private readonly IAuthorizationService<DataActions> _authorizationService;
-        private readonly IReadOnlyList<string> _includeParameters = new[] { "general-practitioner", "organization" };
-        private readonly IReadOnlyList<Tuple<string, string>> _revincludeParameters = new[] { Tuple.Create("Device", "patient") };
 
         public EverythingOperationHandler(ISearchService searchService, IBundleFactory bundleFactory, IAuthorizationService<DataActions> authorizationService)
         {
@@ -46,7 +42,8 @@ namespace Microsoft.Health.Fhir.Core.Features.Operations.Everything
                 throw new UnauthorizedFhirActionException();
             }
 
-            SearchResult searchResult = await _searchService.SearchForEverythingOperationAsync(message.ResourceType, message.ResourceId, message.Start, message.End, message.Since, message.Type, message.Count, message.ContinuationToken, _includeParameters, _revincludeParameters, cancellationToken);
+            SearchResult searchResult = await _searchService.SearchForEverythingOperationAsync(
+                message.ResourceType, message.ResourceId, message.Start, message.End, message.Since, message.Type, message.Count, message.ContinuationToken, message.IncludeParameters, message.RevincludeParameters, cancellationToken);
 
             ResourceElement bundle = _bundleFactory.CreateSearchBundle(searchResult);
 

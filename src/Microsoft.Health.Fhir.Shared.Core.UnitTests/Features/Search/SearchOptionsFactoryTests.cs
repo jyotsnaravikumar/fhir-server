@@ -37,6 +37,7 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
         private readonly SearchOptionsFactory _factory;
         private readonly SearchParameterInfo _resourceTypeSearchParameterInfo;
         private readonly SearchParameterInfo _lastUpdatedSearchParameterInfo;
+        private readonly SearchParameterInfo _dateSearchParameterInfo;
         private readonly CoreFeatureConfiguration _coreFeatures;
         private DefaultFhirRequestContext _defaultFhirRequestContext;
         private readonly ISortingValidator _sortingValidator;
@@ -46,9 +47,11 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
             var searchParameterDefinitionManager = Substitute.For<ISearchParameterDefinitionManager>();
             _resourceTypeSearchParameterInfo = new SearchParameter { Name = SearchParameterNames.ResourceType, Code = SearchParameterNames.ResourceType, Type = SearchParamType.String }.ToInfo();
             _lastUpdatedSearchParameterInfo = new SearchParameter { Name = SearchParameterNames.LastUpdated, Code = SearchParameterNames.LastUpdated, Type = SearchParamType.String }.ToInfo();
+            _dateSearchParameterInfo = new SearchParameter { Name = SearchParameterNames.Date, Code = SearchParameterNames.Date, Type = SearchParamType.Date, Base = new List<ResourceType?> { ResourceType.Observation } }.ToInfo();
             searchParameterDefinitionManager.GetSearchParameter(Arg.Any<string>(), Arg.Any<string>()).Throws(ci => new SearchParameterNotSupportedException(ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
             searchParameterDefinitionManager.GetSearchParameter(Arg.Any<string>(), SearchParameterNames.ResourceType).Returns(_resourceTypeSearchParameterInfo);
             searchParameterDefinitionManager.GetSearchParameter(Arg.Any<string>(), SearchParameterNames.LastUpdated).Returns(_lastUpdatedSearchParameterInfo);
+            searchParameterDefinitionManager.GetSearchParameter(SearchParameterNames.ClinicalDateUri).Returns(_dateSearchParameterInfo);
             _coreFeatures = new CoreFeatureConfiguration();
             _defaultFhirRequestContext = new DefaultFhirRequestContext();
 
@@ -463,6 +466,63 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
             Assert.Equal(_coreFeatures.DefaultIncludeCountPerSearch, options.IncludeCount);
         }
 
+        [Fact]
+        public void GivenAValidCompartmentSearchWithoutClinicalDateForEverythingOperation_WhenCreated_ThenCorrectCompartmentSearchExpressionShouldBeGenerated()
+        {
+            const CompartmentType compartmentType = CompartmentType.Patient;
+            const string compartmentId = "123";
+
+            SearchOptions options = CreateSearchOptionsForEverythingOperation(
+                compartmentType: compartmentType.ToString(),
+                compartmentId: compartmentId,
+                start: null,
+                end: null,
+                since: null,
+                type: null,
+                count: null,
+                continuationToken: null);
+
+            Assert.NotNull(options);
+            ValidateCompartmentSearchExpression(options.Expression, compartmentType.ToString(), compartmentId);
+        }
+
+        [Theory]
+        [InlineData(CompartmentType.Patient, "123", "2010", "2020")]
+        [InlineData(CompartmentType.Patient, "123", "2010-07-01", "2020-07-01")]
+        [InlineData(CompartmentType.Patient, "123", "2010-07-01T13:28:17-05:00", "2020-07-01T13:28:17-05:00")]
+        [InlineData(CompartmentType.Patient, "123", "2010-07-01T13:28:17-05:00", null)]
+        [InlineData(CompartmentType.Patient, "123", null, "2020-07-01T13:28:17-05:00")]
+        public void GivenAValidCompartmentSearchWithClinicalDateForEverythingOperation_WhenCreated_ThenCorrectCompartmentSearchExpressionShouldBeGenerated(
+            CompartmentType compartmentType,
+            string compartmentId,
+            string start,
+            string end)
+        {
+            SearchOptions options = CreateSearchOptionsForEverythingOperation(
+                compartmentType: compartmentType.ToString(),
+                compartmentId: compartmentId,
+                start: string.IsNullOrEmpty(start) ? null : PartialDateTime.Parse(start),
+                end: string.IsNullOrEmpty(end) ? null : PartialDateTime.Parse(end),
+                since: null,
+                type: null,
+                count: null,
+                continuationToken: null);
+
+            Assert.NotNull(options);
+
+            var expression = (MultiaryExpression)options.Expression;
+            Assert.Equal(MultiaryOperator.And, expression.MultiaryOperation);
+            Assert.Equal(2, expression.Expressions.Count);
+
+            // The first expression is a CompartmentSearchExpression
+            ValidateCompartmentSearchExpression(expression.Expressions[0], compartmentType.ToString(), compartmentId);
+
+            // The second expression is a MultiaryExpression made up of type and date constraints
+            var dateExpression = (MultiaryExpression)expression.Expressions[1];
+            Assert.Equal(MultiaryOperator.Or, dateExpression.MultiaryOperation);
+            Assert.Equal(2, dateExpression.Expressions.Count);
+        }
+
         private SearchOptions CreateSearchOptions(
             string resourceType = DefaultResourceType,
             IReadOnlyList<Tuple<string, string>> queryParameters = null,
@@ -470,6 +530,19 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
             string compartmentId = null)
         {
             return _factory.Create(compartmentType, compartmentId, resourceType, queryParameters);
+        }
+
+        private SearchOptions CreateSearchOptionsForEverythingOperation(
+            string compartmentType,
+            string compartmentId,
+            PartialDateTime start,
+            PartialDateTime end,
+            PartialDateTime since,
+            string type,
+            int? count,
+            string continuationToken)
+        {
+            return _factory.Create(compartmentType, compartmentId, start, end, since, type, count, continuationToken);
         }
     }
 }

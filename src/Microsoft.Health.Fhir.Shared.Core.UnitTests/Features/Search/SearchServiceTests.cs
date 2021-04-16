@@ -176,6 +176,22 @@ namespace Microsoft.Health.Fhir.Core.UnitTests.Features.Search
             {
                 return Task.FromResult(SearchImplementation(searchOptions));
             }
+
+            protected override Task<SearchResult> SearchForEverythingOperationInternalAsync(
+                string resourceType,
+                string resourceId,
+                PartialDateTime start,
+                PartialDateTime end,
+                PartialDateTime since,
+                string type,
+                int? count,
+                string continuationToken,
+                IReadOnlyList<string> includeParameters,
+                IReadOnlyList<Tuple<string, string>> revincludeParameters,
+                CancellationToken cancellationToken)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 }
