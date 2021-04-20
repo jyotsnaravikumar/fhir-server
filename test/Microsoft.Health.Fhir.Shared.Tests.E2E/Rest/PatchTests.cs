@@ -34,9 +34,9 @@ namespace Microsoft.Health.Fhir.Tests.E2E.Rest
             FhirResponse<Patient> response = await _client.CreateAsync(poco);
             string patchDocument = "[{\"op\":\"replace\",\"path\":\"/gender\",\"value\":\"female\"}]";
 
-            var patch = await _client.PatchAsync(response.ToString(), patchDocument);
+            var patch = await _client.PatchAsync(response.Resource, patchDocument);
 
-            Assert.Equal(HttpStatusCode.NoContent, patch.Response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, patch.Response.StatusCode);
         }
     }
 }
