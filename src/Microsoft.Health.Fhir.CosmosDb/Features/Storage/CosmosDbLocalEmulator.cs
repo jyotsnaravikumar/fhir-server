@@ -7,7 +7,7 @@ namespace Microsoft.Health.Fhir.CosmosDb.Features.Storage
 {
     public static class CosmosDbLocalEmulator
     {
-        public const string Host = "https://localhost:8081";
-        public const string Key = "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==";
+        public const string Host = "https://jr-cosmos.documents.azure.com:443/";
+        public const string Key = "ToUKFSgivSLsIY1Gkzk885Ov4q7Spf0dY4Q3oqOqVGJ7Ja4qnzziNRZbGzW7aNotBbyMPEXJCCJdipCnKkDdYw==";
     }
 }
