@@ -16,7 +16,7 @@ namespace Microsoft.Health.Fhir.Tests.E2E.Rest
     /// <summary>
     /// Provides R4 specific tests.
     /// </summary>
-    public partial class VersionSpecificTests : IClassFixture<HttpIntegrationTestFixture>
+    public partial class VersionSpecificTests
     {
         [Fact]
         public async Task GivenR4Server_WhenCapabilityStatementIsRetrieved_ThenCorrectVersionShouldBeReturned()

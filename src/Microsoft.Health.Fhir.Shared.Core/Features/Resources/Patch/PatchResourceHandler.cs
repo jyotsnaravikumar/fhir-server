@@ -8,7 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using EnsureThat;
 using Hl7.Fhir.ElementModel;
+using Hl7.Fhir.FhirPath;
 using Hl7.Fhir.Model;
+using Hl7.Fhir.Serialization;
 using MediatR;
 using Microsoft.Health.Core.Features.Security.Authorization;
 using Microsoft.Health.Fhir.Core.Exceptions;
@@ -17,13 +19,13 @@ using Microsoft.Health.Fhir.Core.Features.Persistence;
 using Microsoft.Health.Fhir.Core.Features.Security;
 using Microsoft.Health.Fhir.Core.Messages.Patch;
 using Microsoft.Health.Fhir.Core.Models;
+using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Health.Fhir.Core.Features.Resources.Patch
 {
     public class PatchResourceHandler : BaseResourceHandler, IRequestHandler<PatchResourceRequest, PatchResourceResponse>
     {
         private readonly IModelInfoProvider _modelInfoProvider;
-        private readonly ResourceDeserializer _resourceDeserializer;
 
         public PatchResourceHandler(
             IFhirDataStore fhirDataStore,
@@ -31,26 +33,24 @@ namespace Microsoft.Health.Fhir.Core.Features.Resources.Patch
             IResourceWrapperFactory resourceWrapperFactory,
             ResourceIdProvider resourceIdProvider,
             IAuthorizationService<DataActions> authorizationService,
-            IModelInfoProvider modelInfoProvider,
-            ResourceDeserializer resourceDeserializer)
+            IModelInfoProvider modelInfoProvider)
             : base(fhirDataStore, conformanceProvider, resourceWrapperFactory, resourceIdProvider, authorizationService)
         {
             EnsureArg.IsNotNull(modelInfoProvider, nameof(modelInfoProvider));
 
             _modelInfoProvider = modelInfoProvider;
-            _resourceDeserializer = resourceDeserializer;
         }
 
-        public async Task<PatchResourceResponse> Handle(PatchResourceRequest message, CancellationToken cancellationToken)
+        public async Task<PatchResourceResponse> Handle(PatchResourceRequest request, CancellationToken cancellationToken)
         {
-            EnsureArg.IsNotNull(message, nameof(message));
+            EnsureArg.IsNotNull(request, nameof(request));
 
             if (await AuthorizationService.CheckAccess(DataActions.Write, cancellationToken) != DataActions.Write)
             {
                 throw new UnauthorizedFhirActionException();
             }
 
-            var key = message.ResourceKey;
+            ResourceKey key = request.ResourceKey;
 
             if (!string.IsNullOrEmpty(key.VersionId))
             {
@@ -58,28 +58,52 @@ namespace Microsoft.Health.Fhir.Core.Features.Resources.Patch
             }
 
             ResourceWrapper currentDoc = await FhirDataStore.GetAsync(key, cancellationToken);
+
             if (currentDoc == null)
             {
                 throw new ResourceNotFoundException(string.Format(Core.Resources.ResourceNotFoundById, key.ResourceType, key.Id));
             }
 
-            ResourceElement resource = _resourceDeserializer.Deserialize(currentDoc);
-            Resource resourceInstance = resource.Instance.ToPoco<Resource>();
+            if (currentDoc.IsHistory)
+            {
+                throw new MethodNotAllowedException(Core.Resources.PatchVersionNotAllowed);
+            }
 
-            message.PatchDocument.ApplyTo(resourceInstance);
+            try
+            {
+                ISourceNode node = FhirJsonNode.Parse(currentDoc.RawResource.Data);
+                Resource resource = node.ToTypedElement(_modelInfoProvider.StructureDefinitionSummaryProvider).ToPoco<Resource>();
+                JObject nodeJson = node.ToJObject();
+                string narrative = resource.Scalar(KnownFhirPaths.ResourceNarrative) as string;
+                string narrativeStatus = (string)nodeJson["text"]["status"];
 
-            ResourceWrapper resourceWrapper = CreateResourceWrapper(resourceInstance, deleted: false, keepMeta: true);
-            bool keepHistory = await ConformanceProvider.Value.CanKeepHistory(currentDoc.ResourceTypeName, cancellationToken);
+                request.PatchDocument.ApplyTo(nodeJson);
 
-            UpsertOutcome result = await FhirDataStore.UpsertAsync(
-                resourceWrapper,
-                weakETag: message.WeakETag,
-                allowCreate: false,
-                keepHistory: keepHistory,
-                cancellationToken: cancellationToken);
-            resourceInstance.VersionId = result.Wrapper.Version;
+                FhirJsonNode nodePatch = (FhirJsonNode)FhirJsonNode.Create(nodeJson);
+                Resource resourcePatch = nodePatch.ToTypedElement(_modelInfoProvider.StructureDefinitionSummaryProvider).ToPoco<Resource>();
+                string narrativePatch = resourcePatch.Scalar(KnownFhirPaths.ResourceNarrative) as string;
+                string narrativeStatusPatch = (string)nodeJson["text"]["status"];
 
-            return new PatchResourceResponse(new SaveOutcome(new RawResourceElement(result.Wrapper), result.OutcomeType));
+                if (resource.Id != resourcePatch.Id ||
+                    resource.VersionId != resourcePatch.VersionId ||
+                    resource.Meta.LastUpdated.Value != resourcePatch.Meta.LastUpdated.Value ||
+                    narrative != narrativePatch ||
+                    narrativeStatus != narrativeStatusPatch)
+                {
+                    throw new RequestNotValidException(Core.Resources.PatchImmutablePropertiesIsNotValid);
+                }
+
+                ResourceWrapper resourceWrapper = CreateResourceWrapper(resourcePatch, deleted: false, keepMeta: true);
+                bool keepHistory = await ConformanceProvider.Value.CanKeepHistory(currentDoc.ResourceTypeName, cancellationToken);
+                UpsertOutcome result = await FhirDataStore.UpsertAsync(resourceWrapper, request.WeakETag, false, keepHistory, cancellationToken);
+                resourcePatch.VersionId = result.Wrapper.Version;
+
+                return new PatchResourceResponse(new SaveOutcome(new RawResourceElement(result.Wrapper), result.OutcomeType));
+            }
+            catch (Exception e)
+            {
+                throw new RequestNotValidException(string.Format(Core.Resources.PatchResourceError, e.Message));
+            }
         }
     }
 }
